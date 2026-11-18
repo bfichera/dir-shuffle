@@ -1,0 +1,318 @@
+{
+  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "providers": {
+    "argo": {
+      "name": "Argo Gateway",
+      "baseUrl": "https://apps.inside.anl.gov/argoapi/v1",
+      "api": "openai-completions",
+      "apiKey": "bfichera",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "gpt56sol",
+          "name": "GPT-5.6 Sol",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "gpt56terra",
+          "name": "GPT-5.6 Terra",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "gpt56luna",
+          "name": "GPT-5.6 Luna",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "gpt55",
+          "name": "GPT-5.5",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "gpt54",
+          "name": "GPT-5.4",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "claudeopus55",
+          "name": "Claude Opus 5.5",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "claudeopus48",
+          "name": "Claude Opus 4.8",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "claudesonnet55",
+          "name": "Claude Sonnet 5.5",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "claudesonnet5",
+          "name": "Claude Sonnet 5",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "claudehaiku45",
+          "name": "Claude Haiku 4.5",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 64000,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "gemini35flash",
+          "name": "Gemini 3.5 Flash",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 65536,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        },
+        {
+          "id": "gemini31flashlite",
+          "name": "Gemini 3.1 Flash Lite",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 65536,
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true,
+            "maxTokensField": "max_completion_tokens"
+          }
+        }
+      ]
+    },
+    "anthropic": {
+      "baseUrl": "http://anthropic-proxy:8402",
+      "apiKey": "replaced-by-proxy"
+    }
+  }
+}
