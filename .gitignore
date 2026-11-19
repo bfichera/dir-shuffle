@@ -1,0 +1,7 @@
+/target
+/dist
+# Staged by packaging/fetch-pdfium.sh. The directory itself stays (via .keep) because
+# maturin requires the `data` directory to exist, also for source builds.
+/packaging/data/data/share/dir-shuffle/*
+!/packaging/data/data/share/dir-shuffle/.keep
+__pycache__/

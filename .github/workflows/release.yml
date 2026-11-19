@@ -1,0 +1,83 @@
+# Build self-contained wheels (binary + prebuilt PDFium) and publish on tags (DESIGN.md §9).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DIR_SHUFFLE_PDFIUM_DIR: ${{ github.workspace }}/pdfium/lib
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: PDFium for the PDF tests
+        run: |
+          mkdir -p pdfium
+          curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8125/pdfium-linux-x64.tgz" | tar xz -C pdfium
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  wheels:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,     target: aarch64-apple-darwin,       pdfium: mac-arm64,        manylinux: auto }
+          - { os: macos-13,     target: x86_64-apple-darwin,        pdfium: mac-x64,          manylinux: auto }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu,  pdfium: linux-x64,        manylinux: auto }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, pdfium: linux-arm64,      manylinux: auto }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, pdfium: linux-musl-x64,   manylinux: musllinux_1_2 }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-musl, pdfium: linux-musl-arm64, manylinux: musllinux_1_2 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage PDFium
+        run: packaging/fetch-pdfium.sh ${{ matrix.pdfium }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1

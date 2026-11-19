@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "dir-shuffle"
+description = "Faceted terminal browser for parameter-sweep output trees"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["tui", "terminal", "parameter-sweep", "kitty", "pdf", "viewer"]
+classifiers = [
+    "Environment :: Console",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+bindings = "bin"
+strip = true
+# CI stages libpdfium and its licenses in packaging/data/data/share/dir-shuffle/ (see
+# packaging/fetch-pdfium.sh). The wheel's .data/data/ tree is installed into the
+# environment prefix, so the library ends up at <prefix>/share/dir-shuffle/, next to
+# <prefix>/bin/dir-shuffle, where the binary looks for it (DESIGN.md §6.1).
+data = "packaging/data"
+# The sdist needs the (empty) data dir too, or building from it fails.
+include = [{ path = "packaging/data/**/*", format = "sdist" }]
