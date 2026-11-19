@@ -98,6 +98,7 @@ tools/
 packaging/
   fetch-pdfium.sh    downloads bblanchon/pdfium-binaries and stages it for the wheel
   data/data/share/dir-shuffle/.keep   maturin `data` dir; must exist (see §5.8)
+prepare-release.sh   bump version, run CI checks, commit, tag, push (see §7)
 .github/workflows/release.yml   test job + wheel matrix + sdist + PyPI publish on tags
 ```
 
@@ -433,7 +434,16 @@ dylib quarantine and signing. Ask the user to verify those on their Mac.
   get the quarantine flag, so it should load. Confirm this on a Mac after the first
   release.
 - The version is in `Cargo.toml` (`version`). `pyproject.toml` has
-  `dynamic = ["version"]`. The release steps are in the README ("Releasing").
+  `dynamic = ["version"]`. **Releases are made with `./prepare-release.sh <version>`**.
+  It bumps the version, runs the CI checks, commits, tags and pushes atomically; see the
+  README section "Releasing". The script must keep working with macOS `/bin/bash` 3.2
+  and BSD tools:
+  - no `mapfile`, `declare -A` or `${x,,}`
+  - no `sed -i` (it differs between GNU and BSD)
+  - keep `[[ =~ ]]` regexes in a variable (3.2 can't parse a literal with parentheses)
+
+  After editing it, run `shellcheck prepare-release.sh`, then test it in a scratch clone
+  with a bare repo as `origin`, as done originally.
 
 ## 8. Conventions
 

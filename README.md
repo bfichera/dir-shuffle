@@ -114,14 +114,24 @@ One-time setup:
 
 Each release:
 ```sh
-# 1. Bump `version` in Cargo.toml, then refresh Cargo.lock and check:
-cargo check && cargo test
-git commit -am "Release 0.1.1"
-# 2. Optional dry run: Actions → release → Run workflow (builds everything, publishes nothing)
-# 3. Tag and push. The tag must be exactly v<Cargo.toml version>, or CI refuses.
-git tag v0.1.1
-git push origin main v0.1.1
+./prepare-release.sh 0.2.0 --dry-run   # optional: run every check, then put everything back
+./prepare-release.sh 0.2.0             # bump, check, commit, tag, push (asks before committing and before pushing)
 ```
+The version can also be `v0.2.0`, a pre-release like `0.2.0-rc.1`, or `patch`, `minor`
+or `major` to bump the current version. The script:
+1. Checks that you're on an up-to-date `main` with a clean tree, that the tag is new, and
+   that the PDFium pins agree.
+2. Sets the version in `Cargo.toml` and `Cargo.lock`.
+3. Runs the CI checks (`cargo fmt --check`, `clippy -D warnings`, `cargo test`).
+4. Commits "Release X.Y.Z" and creates an annotated tag `vX.Y.Z` listing the changes
+   since the last tag.
+5. Pushes `main` and the tag together.
+
+If anything fails before the commit, it puts `Cargo.toml` and `Cargo.lock` back. Options:
+`--yes` (no questions), `--no-push` (stop after tagging) and `--help`.
+For the first release, you can also do a CI dry run: *Actions → release → Run workflow*
+builds every wheel and publishes nothing.
+
 Then check that `uv tool install --force dir-shuffle` gets the new version and
 `dir-shuffle <dir> --summary` reports `PDFium loaded (bundled: …)`. PyPI versions are
 immutable. If a release is broken, bump the version and release again (yanking on PyPI is
