@@ -27,3 +27,14 @@ strip = true
 data = "packaging/data"
 # The sdist needs the (empty) data dir too, or building from it fails.
 include = [{ path = "packaging/data/**/*", format = "sdist" }]
+
+[tool.uv]
+# Rebuild on `uv tool install .` when the Rust sources change. By default uv only
+# watches pyproject.toml and would silently reinstall a stale cached build.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "src/**/*.rs" },
+    { file = "packaging/data/**/*" },
+]
