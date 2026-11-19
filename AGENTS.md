@@ -48,7 +48,7 @@ or the event loop, also run an end-to-end check with `tools/tui_drive.py` (§6).
 
 Packaging:
 ```sh
-packaging/fetch-pdfium.sh linux-arm64    # or linux-x64, mac-arm64, mac-x64, linux-musl-*
+packaging/fetch-pdfium.sh linux-arm64    # or linux-x64, mac-arm64, mac-x64
 maturin build --release -o dist          # wheel with binary + bundled PDFium
 uv tool install --force .                # local install (builds via maturin)
 ```
@@ -410,18 +410,30 @@ dylib quarantine and signing. Ask the user to verify those on their Mac.
   for. Verified with `uv tool install` and no env vars set.
 - `packaging/fetch-pdfium.sh <platform>` stages the library, `PDFIUM-LICENSE` and
   `pdfium-licenses/`. The staged files are git-ignored except `.keep`.
-- CI (`.github/workflows/release.yml`):
-  - A test job (fmt, clippy `-D warnings`, tests with PDFium).
-  - A wheel matrix: macOS arm64/x64, Linux gnu x64/aarch64, musl x64/aarch64. Each fetches
-    its matching PDFium.
-  - An sdist, and a PyPI trusted-publishing job on `v*` tags.
-  - **It has never actually run.** Expect to fix details on the first run (runner
-    names, musl cross-compilation, the `manylinux` value).
-- Open questions from §9 milestone 6:
-  - whether the manylinux glibc baseline of PDFium's Linux builds works
-  - macOS code-signing and quarantine of the bundled dylib
+- CI (`.github/workflows/release.yml`), triggered by PRs, manual dispatch and `v*` tags:
+  - A test job (fmt, clippy `-D warnings`, tests with PDFium). On tags, it also fails if
+    the tag isn't exactly `v` + the `Cargo.toml` version.
+  - A wheel matrix: macOS arm64 (`macos-15`), macOS x64 (`macos-15-intel`), and Linux
+    gnu x64/aarch64 (manylinux, cross-built on `ubuntu-latest`). Each fetches its
+    matching PDFium. PDFium's Linux builds need only glibc 2.17, so the wheel's
+    manylinux tag is decided by our own binary.
+  - An sdist, and a PyPI trusted-publishing job (environment `pypi`) on tags.
+  - **It has never run on GitHub yet.** The wheel and sdist builds were checked locally.
+    Runner labels and action versions were checked as of Nov 2026: `macos-13` and
+    `macos-14` are retired, and Node 20 actions stopped working, hence checkout@v7,
+    upload@v7 and download@v8.
+- **No musl wheels, on purpose.** Rust links musl statically, and a static musl binary
+  can't `dlopen` (verified: "Dynamic loading not supported"), so PDFs would never
+  preview. `.cargo/config.toml` sets `-crt-static` for musl, so a build from the sdist on
+  Alpine links dynamically. That build is untested; it needs a musl-native toolchain.
+- **The sdist must not contain a libpdfium.** `include` names only the `.keep` file, not a
+  glob, because the user's staged Mac dylib would otherwise ship (7 MB).
+- Open question: macOS code-signing and quarantine of the bundled dylib. bblanchon's
+  dylib is ad-hoc signed (it has `LC_CODE_SIGNATURE`). Files installed by pip/uv don't
+  get the quarantine flag, so it should load. Confirm this on a Mac after the first
+  release.
 - The version is in `Cargo.toml` (`version`). `pyproject.toml` has
-  `dynamic = ["version"]`.
+  `dynamic = ["version"]`. The release steps are in the README ("Releasing").
 
 ## 8. Conventions
 

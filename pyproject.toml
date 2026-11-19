@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.5,<2"]
+requires = ["maturin>=1.9,<2"]  # 1.9: PEP 639 `license` / `license-files`
 build-backend = "maturin"
 
 [project]
@@ -25,8 +25,13 @@ strip = true
 # environment prefix, so the library ends up at <prefix>/share/dir-shuffle/, next to
 # <prefix>/bin/dir-shuffle, where the binary looks for it (DESIGN.md §6.1).
 data = "packaging/data"
-# The sdist needs the (empty) data dir too, or building from it fails.
-include = [{ path = "packaging/data/**/*", format = "sdist" }]
+# The sdist needs the (empty) data dir too, or building from it fails. Only `.keep`: a
+# glob would also pick up a locally staged libpdfium, and the sdist must not contain one.
+include = [
+    { path = "packaging/data/data/share/dir-shuffle/.keep", format = "sdist" },
+    # musl: link dynamically so libpdfium can be loaded (see the file).
+    { path = ".cargo/config.toml", format = "sdist" },
+]
 
 [tool.uv]
 # Rebuild on `uv tool install .` when the Rust sources change. By default uv only

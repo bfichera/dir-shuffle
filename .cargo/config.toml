@@ -1,0 +1,7 @@
+# Rust links musl targets statically by default, and a statically linked musl binary
+# cannot dlopen() libpdfium ("Dynamic loading not supported"), so PDF previews would
+# never work. Link musl dynamically instead. This matters when building from source on
+# Alpine (`uv tool install dir-shuffle` falls back to the sdist there, because no musl
+# wheels are published). Other targets are unaffected.
+[target.'cfg(target_env = "musl")']
+rustflags = ["-C", "target-feature=-crt-static"]

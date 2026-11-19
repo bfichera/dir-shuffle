@@ -95,8 +95,37 @@ cargo run -- path/to/sweep
 packaging/fetch-pdfium.sh linux-x64 && maturin build --release   # self-contained wheel
 ```
 
-The PDFium build is pinned in three places that must agree: the `pdfium_<N>` feature in
-`Cargo.toml`, `PDFIUM_BUILD` in `PiContainerfile`, and `packaging/fetch-pdfium.sh`.
+The PDFium build is pinned in four places that must agree: the `pdfium_<N>` feature in
+`Cargo.toml`, `PDFIUM_BUILD` in `PiContainerfile` and `packaging/fetch-pdfium.sh`, and
+the download URL in `.github/workflows/release.yml`.
+
+## Releasing
+
+Releases are built and published by `.github/workflows/release.yml` when a `v*` tag is
+pushed. That builds wheels for macOS (arm64, x64) and Linux (x64, aarch64), each
+bundling PDFium, plus an sdist, and uploads them to PyPI.
+
+One-time setup:
+1. On PyPI, go to *Your account → Publishing → Add a new pending publisher* (GitHub):
+   project `dir-shuffle`, owner `bfichera`, repository `dir-shuffle`, workflow
+   `release.yml`, environment `pypi`. No API token is needed (trusted publishing).
+2. On GitHub, go to *Settings → Environments → New environment* and name it `pypi`.
+   Optionally, add yourself as a required reviewer, so every publish waits for your OK.
+
+Each release:
+```sh
+# 1. Bump `version` in Cargo.toml, then refresh Cargo.lock and check:
+cargo check && cargo test
+git commit -am "Release 0.1.1"
+# 2. Optional dry run: Actions → release → Run workflow (builds everything, publishes nothing)
+# 3. Tag and push. The tag must be exactly v<Cargo.toml version>, or CI refuses.
+git tag v0.1.1
+git push origin main v0.1.1
+```
+Then check that `uv tool install --force dir-shuffle` gets the new version and
+`dir-shuffle <dir> --summary` reports `PDFium loaded (bundled: …)`. PyPI versions are
+immutable. If a release is broken, bump the version and release again (yanking on PyPI is
+possible, but the version can't be reused).
 
 License: MIT. Wheels redistribute PDFium (BSD-3-Clause/Apache-2.0); its license files
 ship in `share/dir-shuffle/`.
