@@ -169,9 +169,12 @@ fn list_dirs(filter: &mut Filter, root: &Path, dirs: &[PathBuf]) -> LevelOut {
                 continue;
             }
             let child = rel.join(&name);
+            // Our own config file is never data. Ignore files are rules, not data, when
+            // they are being respected.
             let is_rule_file = !is_dir
-                && filter.respect_ignore_files
-                && IGNORE_FILES.iter().any(|f| OsStr::new(f) == name);
+                && (name == OsStr::new(crate::config::PROJECT_FILE)
+                    || (filter.respect_ignore_files
+                        && IGNORE_FILES.iter().any(|f| OsStr::new(f) == name)));
             if is_rule_file || filter.is_ignored(&child, is_dir) {
                 out.ignored += 1;
                 continue;
@@ -389,6 +392,24 @@ mod tests {
         assert_eq!(r.files.len(), 1);
         assert_eq!(r.files[0].parts, ["mean-rejected", "notes"]);
         assert_eq!(r.files[0].ext, "txt");
+    }
+
+    #[test]
+    fn project_config_in_root_is_not_data() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        touch(root, "a/x.pdf");
+        touch(root, "b/x.pdf");
+        touch(root, ".dir-shuffle.toml");
+        for respect in [true, false] {
+            let o = ScanOptions {
+                respect_ignore_files: respect,
+                ..opts(&[])
+            };
+            let r = scan(root, &o).unwrap();
+            assert_eq!(r.depth, Some(1), "respect_ignore_files={respect}");
+            assert_eq!(r.files.len(), 2);
+        }
     }
 
     #[test]

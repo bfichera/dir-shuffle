@@ -16,6 +16,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wra
 use ratatui::Frame;
 
 use crate::cache::{Cache, Lookup, Preview};
+use crate::keys::{Action as K, KeyMap};
 use crate::table::{DimId, Table};
 use crate::view::View;
 
@@ -51,6 +52,7 @@ pub struct App {
     list_state: ListState,
     /// Re-stat the selected file on the next lookup (set on selection changes).
     verify_selected: bool,
+    pub keymap: KeyMap,
 }
 
 const FOCUSED_NEIGHBORS: usize = 2;
@@ -91,6 +93,7 @@ impl App {
             preview_area: Rect::default(),
             list_state: ListState::default(),
             verify_selected: true,
+            keymap: KeyMap::default(),
         }
     }
 
@@ -152,9 +155,7 @@ impl App {
         if k.kind == KeyEventKind::Release {
             return Action::None;
         }
-        if k.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(k.code, KeyCode::Char('c') | KeyCode::Char('q'))
-        {
+        if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return Action::Quit;
         }
         match self.screen {
@@ -163,40 +164,53 @@ impl App {
         }
     }
 
+    /// The view picker is a small menu: besides the configured movement keys, Enter/Space
+    /// choose, Esc goes back and digits pick directly. Those are fixed.
     fn picker_key(&mut self, k: KeyEvent) -> Action {
         let n = self.table.free_candidates().len();
+        let plain = k.modifiers - KeyModifiers::SHIFT == KeyModifiers::NONE;
         match k.code {
-            KeyCode::Char('q') => return Action::Quit,
-            KeyCode::Esc | KeyCode::Char('v') => self.screen = Screen::Browser,
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
-                if n > 0 {
-                    self.picker_sel = (self.picker_sel + 1) % n;
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => {
-                if n > 0 {
-                    self.picker_sel = (self.picker_sel + n - 1) % n;
-                }
-            }
-            KeyCode::Char('g') | KeyCode::Home => self.picker_sel = 0,
-            KeyCode::Char('G') | KeyCode::End => self.picker_sel = n.saturating_sub(1),
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right | KeyCode::Char(' ') => {
-                if let Some(&d) = self.table.free_candidates().get(self.picker_sel) {
-                    self.choose_free(d);
-                }
+            KeyCode::Esc => {
                 self.screen = Screen::Browser;
+                return Action::None;
             }
-            KeyCode::Char(c) if c.is_ascii_digit() => {
+            KeyCode::Enter | KeyCode::Char(' ') if plain => {
+                self.choose_selected();
+                return Action::None;
+            }
+            KeyCode::Char(c @ '1'..='9') if plain => {
                 let i = (c as u8 - b'0') as usize;
-                if (1..=n).contains(&i) {
+                if i <= n {
                     let d = self.table.free_candidates()[i - 1];
                     self.choose_free(d);
                     self.screen = Screen::Browser;
                 }
+                return Action::None;
             }
             _ => {}
         }
+        match self.keymap.action(&k) {
+            Some(K::Quit) => return Action::Quit,
+            Some(K::ViewPicker) => self.screen = Screen::Browser,
+            Some(K::MoveDown | K::FocusNext | K::PageDown | K::HalfPageDown) if n > 0 => {
+                self.picker_sel = (self.picker_sel + 1) % n;
+            }
+            Some(K::MoveUp | K::FocusPrev | K::PageUp | K::HalfPageUp) if n > 0 => {
+                self.picker_sel = (self.picker_sel + n - 1) % n;
+            }
+            Some(K::First) => self.picker_sel = 0,
+            Some(K::Last) => self.picker_sel = n.saturating_sub(1),
+            Some(K::ValueNext | K::Open) => self.choose_selected(),
+            _ => {}
+        }
         Action::None
+    }
+
+    fn choose_selected(&mut self) {
+        if let Some(&d) = self.table.free_candidates().get(self.picker_sel) {
+            self.choose_free(d);
+        }
+        self.screen = Screen::Browser;
     }
 
     fn choose_free(&mut self, d: DimId) {
@@ -210,64 +224,96 @@ impl App {
 
     fn browser_key(&mut self, k: KeyEvent) -> Action {
         let page = (self.preview_area.height.max(2) as isize) - 1;
-        match k.code {
-            KeyCode::Char('q') => return Action::Quit,
-            KeyCode::Char('j') | KeyCode::Down => self.view.move_by(1),
-            KeyCode::Char('k') | KeyCode::Up => self.view.move_by(-1),
-            KeyCode::PageDown => self.view.move_by(page),
-            KeyCode::PageUp => self.view.move_by(-page),
-            KeyCode::Char('d') if k.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.view.move_by(page / 2)
-            }
-            KeyCode::Char('u') if k.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.view.move_by(-page / 2)
-            }
-            KeyCode::Char('g') | KeyCode::Home => self.view.first(),
-            KeyCode::Char('G') | KeyCode::End => self.view.last(),
-            KeyCode::Tab => self.view.focus_step(&self.table, 1),
-            KeyCode::BackTab => self.view.focus_step(&self.table, -1),
-            KeyCode::Char('h') | KeyCode::Left => {
+        let Some(action) = self.keymap.action(&k) else {
+            return Action::None;
+        };
+        match action {
+            K::Quit => return Action::Quit,
+            K::MoveDown => self.view.move_by(1),
+            K::MoveUp => self.view.move_by(-1),
+            K::PageDown => self.view.move_by(page),
+            K::PageUp => self.view.move_by(-page),
+            K::HalfPageDown => self.view.move_by(page / 2),
+            K::HalfPageUp => self.view.move_by(-page / 2),
+            K::First => self.view.first(),
+            K::Last => self.view.last(),
+            K::FocusNext => self.view.focus_step(&self.table, 1),
+            K::FocusPrev => self.view.focus_step(&self.table, -1),
+            K::ValuePrev => {
                 if !self.view.step_focused(&self.table, -1) {
                     self.no_step_message(-1);
                 }
             }
-            KeyCode::Char('l') | KeyCode::Right => {
+            K::ValueNext => {
                 if !self.view.step_focused(&self.table, 1) {
                     self.no_step_message(1);
                 }
             }
-            KeyCode::Char('f') => {
+            K::Pivot => {
                 if !self.view.pivot(&self.table) {
                     self.set_message(
                         "nothing to pivot: no other dimension has more than one value",
                     );
                 }
             }
-            KeyCode::Char('v') => {
+            K::ViewPicker => {
                 let cands = self.table.free_candidates();
                 self.picker_sel = cands.iter().position(|&d| d == self.view.free).unwrap_or(0);
                 self.screen = Screen::Picker;
             }
-            KeyCode::Char('o') | KeyCode::Enter => {
+            K::Open => {
                 if let Some(p) = self.selected_path() {
                     return Action::Open(p);
                 }
             }
-            KeyCode::Char('y') => {
+            K::CopyPath => {
                 if let Some(p) = self.selected_path() {
                     let abs = std::fs::canonicalize(&p).unwrap_or(p);
                     return Action::Copy(abs.display().to_string());
                 }
             }
-            _ => return Action::None,
         }
         self.selection_changed();
         Action::None
     }
 
+    /// The help line, built from the effective bindings. Unbound actions are left out.
+    fn help_line(&self) -> String {
+        let m = &self.keymap;
+        let items: Vec<(Option<String>, &str)> = match self.screen {
+            Screen::Browser => vec![
+                (m.pair_hint(K::MoveDown, K::MoveUp), "move"),
+                (m.pair_hint(K::FocusNext, K::FocusPrev), "focus"),
+                (m.pair_hint(K::ValuePrev, K::ValueNext), "change"),
+                (m.hint(K::Pivot), "pivot"),
+                (m.hint(K::ViewPicker), "views"),
+                (m.hint(K::Open), "open"),
+                (m.hint(K::CopyPath), "copy"),
+                (m.hint(K::Quit), "quit"),
+            ],
+            Screen::Picker => vec![
+                (m.pair_hint(K::MoveDown, K::MoveUp), "choose"),
+                (Some("Enter".into()), "browse"),
+                (Some("Esc".into()), "back"),
+                (m.hint(K::Quit), "quit"),
+            ],
+        };
+        let parts: Vec<String> = items
+            .into_iter()
+            .filter_map(|(k, what)| k.map(|k| format!("{k} {what}")))
+            .collect();
+        format!(" {} ", parts.join(" · "))
+    }
+
     fn no_step_message(&mut self, dir: isize) {
         match self.view.focus {
-            None => self.set_message("no fixed dimension to change (Tab focuses one)"),
+            None => {
+                let hint = match self.keymap.hint(K::FocusNext) {
+                    Some(k) => format!(" ({k} focuses one)"),
+                    None => String::new(),
+                };
+                self.set_message(format!("no fixed dimension to change{hint}"));
+            }
             Some(d) => {
                 let label = &self.table.dims[d].label;
                 let which = if dir < 0 { "first" } else { "last" };
@@ -516,12 +562,7 @@ impl App {
             Some((m, _)) => Span::styled(m.clone(), Style::new().fg(Color::Yellow)),
             None => Span::styled(self.notice.clone(), Style::new().fg(Color::DarkGray)),
         };
-        let keys = match self.screen {
-            Screen::Browser => {
-                " j/k move · Tab focus · h/l change · f pivot · v views · o open · y copy · q quit "
-            }
-            Screen::Picker => " j/k choose · Enter browse · Esc back · q quit ",
-        };
+        let keys = self.help_line();
         let block = Block::new()
             .borders(Borders::ALL)
             .title_bottom(Line::from(keys).right_aligned());
@@ -640,6 +681,40 @@ mod tests {
         ));
         assert!(matches!(
             a.handle_key(key(KeyCode::Char('q'))),
+            Action::Quit
+        ));
+    }
+
+    #[test]
+    fn custom_keymap() {
+        use crate::keys::{Action as K, Bindings, Key};
+        let mut a = app();
+        let k = |s: &str| Key::parse(s).unwrap();
+        let cfg: BTreeMap<K, Bindings> = [
+            (K::FocusNext, Bindings(vec![k("L")])),
+            (K::FocusPrev, Bindings(vec![k("H")])),
+        ]
+        .into();
+        a.keymap = KeyMap::build(&[&cfg]);
+        let shift = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT);
+        a.handle_key(key(KeyCode::Enter));
+        assert_eq!(a.view.focus, Some(0));
+        a.handle_key(shift('L'));
+        assert_eq!(a.view.focus, Some(3)); // skips the constant dimension
+        a.handle_key(shift('H'));
+        assert_eq!(a.view.focus, Some(0));
+        a.handle_key(key(KeyCode::Tab)); // no longer bound
+        assert_eq!(a.view.focus, Some(0));
+        a.handle_key(key(KeyCode::Char('l'))); // value-next is unchanged
+        assert_eq!(a.view.fixed[0], 1);
+        let s = screen_text(&mut a);
+        assert!(
+            s.contains("j/k move · L/H focus · h/l change · f pivot"),
+            "{s}"
+        );
+        // Ctrl-c always quits, whatever the config.
+        assert!(matches!(
+            a.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
             Action::Quit
         ));
     }

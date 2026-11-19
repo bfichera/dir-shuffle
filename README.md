@@ -47,6 +47,8 @@ it. Add an ignore rule for it (see below).
 | `y` | copy the absolute path (OSC 52) |
 | `q` | quit |
 
+All of these can be rebound (see `[keys]` below). `Ctrl-c` always quits.
+
 ## Configure
 
 No configuration is needed. Optional settings are read from (highest precedence first):
@@ -62,7 +64,19 @@ cache-mb = 256               # preview cache
 
 [labels]                     # cosmetic dimension names, by level index
 2 = "temp"
+
+[keys]                       # a key or a list of keys; replaces that action's defaults
+focus-next = "L"             # default "tab"
+focus-prev = ["H", "shift-tab"]
+open = []                    # unbind
 ```
+
+Key actions: `move-down`, `move-up`, `page-down`, `page-up`, `half-page-down`,
+`half-page-up`, `first`, `last`, `focus-next`, `focus-prev`, `value-next`, `value-prev`,
+`pivot`, `view-picker`, `open`, `copy-path`, `quit`. Keys are single characters (`j`, `L`,
+`?`) or names (`tab`, `enter`, `esc`, `space`, `up`, `pagedown`, `f1`, …), with optional
+`ctrl-`/`alt-`/`shift-` prefixes. A key you bind is taken away from any action that had it
+by default. `dir-shuffle config show` lists the effective bindings and where each came from.
 
 ```sh
 dir-shuffle config show [--global|--project]

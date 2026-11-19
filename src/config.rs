@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
+use crate::keys::{self, Action, Bindings, KeyMap};
+
 pub const DEFAULT_IGNORE: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini", "._*"];
 pub const DEFAULT_PREFETCH: usize = 5;
 pub const DEFAULT_CACHE_MB: u64 = 256;
@@ -65,6 +67,8 @@ pub struct Layer {
     pub prefetch: Option<usize>,
     pub cache_mb: Option<u64>,
     pub labels: Option<BTreeMap<LevelKey, String>>,
+    /// Key bindings by action (see `keys.rs`).
+    pub keys: Option<BTreeMap<Action, Bindings>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +114,8 @@ pub struct Config {
     pub cache_mb: u64,
     pub cache_src: Source,
     pub labels: BTreeMap<usize, (String, Source)>,
+    /// `[keys]` tables in increasing precedence.
+    pub keys: Vec<(BTreeMap<Action, Bindings>, Source)>,
 }
 
 impl Default for Config {
@@ -126,6 +132,7 @@ impl Default for Config {
             cache_mb: DEFAULT_CACHE_MB,
             cache_src: Source::Default,
             labels: BTreeMap::new(),
+            keys: Vec::new(),
         }
     }
 }
@@ -160,6 +167,9 @@ impl Config {
                 for (k, v) in labels {
                     c.labels.insert(k.0, (v.clone(), src.clone()));
                 }
+            }
+            if let Some(k) = &layer.keys {
+                c.keys.push((k.clone(), src.clone()));
             }
         }
         if let Some(v) = cli.prefetch {
@@ -197,6 +207,11 @@ impl Config {
             .iter()
             .map(|(k, (v, _))| (*k, v.clone()))
             .collect()
+    }
+
+    pub fn keymap(&self) -> KeyMap {
+        let layers: Vec<_> = self.keys.iter().map(|(k, _)| k).collect();
+        KeyMap::build(&layers)
     }
 
     pub fn cache_bytes(&self) -> usize {
@@ -252,6 +267,24 @@ pub enum ConfigKind {
 
 /// Parse config text. For `Pyproject`, returns `None` if there is no `[tool.dir-shuffle]`.
 pub fn parse_layer(path: &Path, text: &str, kind: ConfigKind) -> Result<Option<Layer>> {
+    let layer = parse_layer_unchecked(path, text, kind)?;
+    if let Some(k) = layer.as_ref().and_then(|l| l.keys.as_ref()) {
+        keys::check_duplicates(k).map_err(|e| {
+            // Point at the [keys] table header for context.
+            let line = text
+                .lines()
+                .position(|l| {
+                    let t = l.trim();
+                    t == "[keys]" || t == "[tool.dir-shuffle.keys]"
+                })
+                .map_or(String::new(), |i| format!(":{}", i + 1));
+            anyhow::anyhow!("{}{line}: {e}", path.display())
+        })?;
+    }
+    Ok(layer)
+}
+
+fn parse_layer_unchecked(path: &Path, text: &str, kind: ConfigKind) -> Result<Option<Layer>> {
     match kind {
         ConfigKind::Plain => toml::from_str::<Layer>(text)
             .map(Some)
@@ -417,6 +450,25 @@ pub const TEMPLATE_BODY: &str = r#"# Patterns use gitignore syntax and are appli
 # 0 = "reject"
 # 1 = "norm"
 # 2 = "temp"
+#
+# [keys]                      # a key or a list of keys; replaces the defaults, [] unbinds
+# move-down = ["j", "down"]
+# move-up = ["k", "up"]
+# page-down = "pagedown"
+# page-up = "pageup"
+# half-page-down = "ctrl-d"
+# half-page-up = "ctrl-u"
+# first = ["g", "home"]
+# last = ["G", "end"]
+# focus-next = "tab"          # e.g. "L"
+# focus-prev = "shift-tab"    # e.g. "H"
+# value-next = ["l", "right"]
+# value-prev = ["h", "left"]
+# pivot = "f"
+# view-picker = "v"
+# open = ["o", "enter"]
+# copy-path = "y"
+# quit = "q"
 "#;
 
 pub fn template_plain() -> String {
@@ -484,6 +536,34 @@ pub fn render_show(c: &Config, header: &[String]) -> String {
                 src,
             );
         }
+    }
+    // Effective key bindings, with where each came from.
+    out.push_str("\n[keys]\n");
+    let map = c.keymap();
+    for a in Action::ALL {
+        let src = c
+            .keys
+            .iter()
+            .rev()
+            .find(|(k, _)| k.contains_key(&a))
+            .map(|(_, s)| s.clone());
+        let specs: Vec<String> = map
+            .keys(a)
+            .iter()
+            .map(|k| toml::Value::String(k.spec()).to_string())
+            .collect();
+        let val = match specs.len() {
+            1 => specs[0].clone(),
+            _ => format!("[{}]", specs.join(", ")),
+        };
+        let note = match src {
+            Some(s) => s.to_string(),
+            None if map.keys(a).len() < a.defaults().len() => {
+                "default (some keys rebound elsewhere)".to_string()
+            }
+            None => "default".to_string(),
+        };
+        out.push_str(&format!("{:<48} # {note}\n", format!("{a} = {val}")));
     }
     if !c.use_ignore_patterns {
         out.push_str("\n# --no-ignore: the patterns above are not applied\n");
@@ -911,5 +991,78 @@ mod tests {
     #[test]
     fn template_is_valid_and_empty() {
         assert_eq!(layer(&template_plain()), Layer::default());
+        // Uncommenting the [keys] section reproduces the defaults exactly.
+        let keys_section: String = TEMPLATE_BODY
+            .lines()
+            .skip_while(|l| !l.starts_with("# [keys]"))
+            .map(|l| l.strip_prefix("# ").unwrap_or(l))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let l = layer(&keys_section);
+        let k = l.keys.expect("template has a [keys] section");
+        assert_eq!(k.len(), Action::ALL.len());
+        let from_template = KeyMap::build(&[&k]);
+        let defaults = KeyMap::default();
+        for a in Action::ALL {
+            assert_eq!(from_template.keys(a), defaults.keys(a), "{a}");
+        }
+    }
+
+    #[test]
+    fn keys_in_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let g = tmp.path().join("global.toml");
+        fs::write(
+            &g,
+            "[keys]\nfocus-next = \"L\"\nfocus-prev = [\"H\", \"shift-tab\"]\n",
+        )
+        .unwrap();
+        let p = tmp.path().join("pyproject.toml");
+        fs::write(&p, "[tool.dir-shuffle.keys]\nopen = []\n").unwrap();
+        let layers = vec![
+            (
+                load_layer(&g, ConfigKind::Plain).unwrap().unwrap(),
+                Source::Global(g.clone()),
+            ),
+            (
+                load_layer(&p, ConfigKind::Pyproject).unwrap().unwrap(),
+                Source::Project(p.clone()),
+            ),
+        ];
+        let c = Config::merge(&layers, &CliOverrides::default());
+        let m = c.keymap();
+        assert_eq!(
+            m.pair_hint(Action::FocusNext, Action::FocusPrev).unwrap(),
+            "L/H"
+        );
+        assert!(m.keys(Action::Open).is_empty());
+        let shown = render_show(&c, &[]);
+        assert!(shown.contains("focus-next = \"L\""), "{shown}");
+        assert!(
+            shown.contains("focus-prev = [\"H\", \"shift-tab\"]"),
+            "{shown}"
+        );
+        assert!(shown.contains("open = []"), "{shown}");
+        assert!(shown.contains("move-down = [\"j\", \"down\"]"), "{shown}");
+
+        // Errors carry the line of the bad key, or of the [keys] header for duplicates.
+        let bad = "prefetch = 3\n[keys]\nquit = \"ctrl-c\"\n";
+        let e = parse_layer(Path::new("c.toml"), bad, ConfigKind::Plain)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("c.toml:3:") && e.contains("reserved"), "{e}");
+        let bad = "[keys]\nquit = \"x\"\nfrobnicate = \"y\"\n";
+        let e = parse_layer(Path::new("c.toml"), bad, ConfigKind::Plain)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("c.toml:3:") && e.contains("frobnicate"), "{e}");
+        let bad = "[keys]\npivot = \"x\"\nquit = [\"q\", \"x\"]\n";
+        let e = parse_layer(Path::new("c.toml"), bad, ConfigKind::Plain)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("c.toml:1:") && e.contains("`x` is bound to both"),
+            "{e}"
+        );
     }
 }

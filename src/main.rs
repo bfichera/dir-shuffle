@@ -2,6 +2,7 @@
 
 mod cache;
 mod config;
+mod keys;
 mod render;
 mod scan;
 mod table;
@@ -284,6 +285,7 @@ fn run_tui(args: BrowseArgs, loaded: Loaded, cfg: config::Config) -> Result<()> 
         loaded.notice,
         cfg.prefetch,
     );
+    app.keymap = cfg.keymap();
 
     // Terminal setup. Restore on panic, too.
     let hook = std::panic::take_hook();
