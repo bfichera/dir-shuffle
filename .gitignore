@@ -5,3 +5,4 @@
 /packaging/data/data/share/dir-shuffle/*
 !/packaging/data/data/share/dir-shuffle/.keep
 __pycache__/
+/uv.lock
