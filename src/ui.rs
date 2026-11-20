@@ -17,7 +17,8 @@ use ratatui::Frame;
 
 use crate::cache::{Cache, Lookup, Preview};
 use crate::keys::{Action as K, KeyMap};
-use crate::table::{DimId, Table};
+use crate::render::text;
+use crate::table::{DimId, RowId, Table};
 use crate::view::View;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +53,13 @@ pub struct App {
     list_state: ListState,
     /// Re-stat the selected file on the next lookup (set on selection changes).
     verify_selected: bool,
+    /// First visible line of a text preview. `draw` clamps it to the end of the file,
+    /// since only it knows the pane size.
+    pub text_scroll: usize,
+    /// The row `text_scroll` belongs to: selecting another file starts at its top.
+    scroll_row: Option<RowId>,
+    /// The last frame showed a text preview longer than the pane (adds the scroll hint).
+    text_scrollable: bool,
     pub keymap: KeyMap,
 }
 
@@ -93,6 +101,9 @@ impl App {
             preview_area: Rect::default(),
             list_state: ListState::default(),
             verify_selected: true,
+            text_scroll: 0,
+            scroll_row: None,
+            text_scrollable: false,
             keymap: KeyMap::default(),
         }
     }
@@ -220,6 +231,11 @@ impl App {
 
     fn selection_changed(&mut self) {
         self.verify_selected = true;
+        let row = self.view.selected_row();
+        if row != self.scroll_row {
+            self.scroll_row = row;
+            self.text_scroll = 0;
+        }
     }
 
     fn browser_key(&mut self, k: KeyEvent) -> Action {
@@ -261,6 +277,15 @@ impl App {
                 self.picker_sel = cands.iter().position(|&d| d == self.view.free).unwrap_or(0);
                 self.screen = Screen::Picker;
             }
+            // No-ops unless a text preview is showing: `draw` clamps the offset.
+            K::PreviewDown => {
+                self.text_scroll = self.text_scroll.saturating_add(1);
+                return Action::None;
+            }
+            K::PreviewUp => {
+                self.text_scroll = self.text_scroll.saturating_sub(1);
+                return Action::None;
+            }
             K::Open => {
                 if let Some(p) = self.selected_path() {
                     return Action::Open(p);
@@ -285,6 +310,11 @@ impl App {
                 (m.pair_hint(K::MoveDown, K::MoveUp), "move"),
                 (m.pair_hint(K::FocusNext, K::FocusPrev), "focus"),
                 (m.pair_hint(K::ValuePrev, K::ValueNext), "change"),
+                (
+                    m.pair_hint(K::PreviewDown, K::PreviewUp)
+                        .filter(|_| self.text_scrollable),
+                    "scroll",
+                ),
                 (m.hint(K::Pivot), "pivot"),
                 (m.hint(K::ViewPicker), "views"),
                 (m.hint(K::Open), "open"),
@@ -471,6 +501,7 @@ impl App {
         let block = preview_block();
         let inner = block.inner(area);
         self.preview_area = inner;
+        self.text_scrollable = false;
         f.render_widget(block, area);
         match preview {
             None => {
@@ -483,6 +514,30 @@ impl App {
                     Paragraph::new(msg).style(Style::new().fg(Color::DarkGray)),
                     inner,
                 );
+            }
+            Some(Preview::Text(lines)) => {
+                let (w, h) = (inner.width as usize, inner.height as usize);
+                let max = text::max_scroll(lines, w, h);
+                self.text_scroll = self.text_scroll.min(max);
+                self.text_scrollable = max > 0;
+                let rows: Vec<Line> = lines[self.text_scroll.min(lines.len())..]
+                    .iter()
+                    .flat_map(|l| text::wrap(l, w))
+                    .take(h)
+                    .map(Line::raw)
+                    .collect();
+                f.render_widget(Paragraph::new(rows), inner);
+                // Position on the bottom border, only when there is something to scroll.
+                if max > 0 && area.width > 2 && area.height > 0 {
+                    let pos = format!(" line {}/{} ", self.text_scroll + 1, lines.len());
+                    let border = Rect {
+                        x: area.x + 1,
+                        y: area.y + area.height - 1,
+                        width: area.width - 2,
+                        height: 1,
+                    };
+                    f.render_widget(Line::from(pos).right_aligned(), border);
+                }
             }
             Some(Preview::Card(lines)) => {
                 let text: Vec<Line> = lines.iter().map(|l| Line::raw(l.as_str())).collect();
@@ -717,6 +772,44 @@ mod tests {
             a.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
             Action::Quit
         ));
+    }
+
+    #[test]
+    fn text_preview_scrolls() {
+        use std::sync::Arc;
+        let mut a = app();
+        a.handle_key(key(KeyCode::Enter));
+        let lines: Vec<String> = (1..=40).map(|i| format!("row {i:02}")).collect();
+        let p = Preview::Text(Arc::new(lines));
+        let draw = |a: &mut App| {
+            let mut term = Terminal::new(TestBackend::new(100, 20)).unwrap();
+            term.draw(|f| a.draw(f, Some(&p))).unwrap();
+            format!("{}", term.backend())
+        };
+        let shift = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT);
+        let s = draw(&mut a);
+        assert!(s.contains("row 01") && s.contains("line 1/40"), "{s}");
+        assert!(s.contains("J/K scroll"), "{s}");
+        a.handle_key(shift('K')); // already at the top
+        a.handle_key(shift('J'));
+        a.handle_key(shift('J'));
+        assert_eq!(a.view.selected, 0); // the list did not move
+        let s = draw(&mut a);
+        assert!(!s.contains("row 02") && s.contains("row 03"), "{s}");
+        assert!(s.contains("line 3/40"), "{s}");
+        // Scrolling stops when the last line reaches the bottom of the pane.
+        for _ in 0..100 {
+            a.handle_key(shift('J'));
+        }
+        let s = draw(&mut a);
+        assert!(s.contains("row 40"), "{s}");
+        let h = a.preview_area.height as usize;
+        assert_eq!(a.text_scroll, 40 - h);
+        a.handle_key(shift('K'));
+        assert_eq!(a.text_scroll, 40 - h - 1);
+        // Another file starts at the top again.
+        a.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(a.text_scroll, 0);
     }
 
     #[test]

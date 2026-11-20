@@ -468,6 +468,8 @@ pub const TEMPLATE_BODY: &str = r#"# Patterns use gitignore syntax and are appli
 # view-picker = "v"
 # open = ["o", "enter"]
 # copy-path = "y"
+# preview-down = "J"          # scroll a text preview
+# preview-up = "K"
 # quit = "q"
 "#;
 

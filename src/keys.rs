@@ -37,11 +37,13 @@ pub enum Action {
     ViewPicker,
     Open,
     CopyPath,
+    PreviewDown,
+    PreviewUp,
     Quit,
 }
 
 impl Action {
-    pub const ALL: [Action; 17] = [
+    pub const ALL: [Action; 19] = [
         Action::MoveDown,
         Action::MoveUp,
         Action::PageDown,
@@ -58,6 +60,8 @@ impl Action {
         Action::ViewPicker,
         Action::Open,
         Action::CopyPath,
+        Action::PreviewDown,
+        Action::PreviewUp,
         Action::Quit,
     ];
 
@@ -79,6 +83,8 @@ impl Action {
             Action::ViewPicker => "view-picker",
             Action::Open => "open",
             Action::CopyPath => "copy-path",
+            Action::PreviewDown => "preview-down",
+            Action::PreviewUp => "preview-up",
             Action::Quit => "quit",
         }
     }
@@ -101,6 +107,8 @@ impl Action {
             Action::ViewPicker => &["v"],
             Action::Open => &["o", "enter"],
             Action::CopyPath => &["y"],
+            Action::PreviewDown => &["J"],
+            Action::PreviewUp => &["K"],
             Action::Quit => &["q"],
         }
     }

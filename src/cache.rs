@@ -33,6 +33,8 @@ pub enum Preview {
     Kitty(Arc<KittyImage>),
     /// Sixel / iTerm2 / halfblocks (or kitty inside tmux) through ratatui-image.
     Proto(Arc<Protocol>),
+    /// The head of a plain-text file, one sanitized string per line (see `render::text`).
+    Text(Arc<Vec<String>>),
     /// Text card: path, size, mtime and an optional note.
     Card(Arc<Vec<String>>),
 }
@@ -46,7 +48,9 @@ impl Preview {
                 let s = p.size();
                 (s.width as usize * s.height as usize).max(1) * 2048
             }
-            Preview::Card(c) => c.iter().map(|l| l.len() + 24).sum::<usize>() + 64,
+            Preview::Text(c) | Preview::Card(c) => {
+                c.iter().map(|l| l.len() + 24).sum::<usize>() + 64
+            }
         }
     }
 }
@@ -128,7 +132,8 @@ impl Encoder {
 #[derive(Clone)]
 struct Job {
     key: JobKey,
-    kind: Kind,
+    /// `None`: no renderer; sniff for plain text.
+    kind: Option<Kind>,
     gen: u64,
     enc: Arc<Encoder>,
 }
@@ -300,7 +305,8 @@ impl Cache {
     }
 
     /// Replace the queue with `paths`, highest priority first. Cached and running files are
-    /// skipped. Files no renderer can handle get their text card right away.
+    /// skipped. Files no renderer can handle are sniffed for plain text by a worker
+    /// too, so the UI thread never reads file contents.
     pub fn request(&mut self, paths: &[PathBuf]) {
         if self.enc.area_cells.0 == 0 || self.enc.area_cells.1 == 0 {
             return;
@@ -313,18 +319,12 @@ impl Cache {
                 continue;
             }
             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-            match render::kind_for_ext(ext) {
-                None => {
-                    let card = Preview::Card(Arc::new(render::text_card(p, None)));
-                    self.insert(key, Stamp::of(p), card);
-                }
-                Some(kind) => jobs.push(Job {
-                    key,
-                    kind,
-                    gen: self.gen,
-                    enc: self.enc.clone(),
-                }),
-            }
+            jobs.push(Job {
+                key,
+                kind: render::kind_for_ext(ext),
+                gen: self.gen,
+                enc: self.enc.clone(),
+            });
         }
         let mut q = self.shared.q.lock().unwrap();
         q.pending = jobs
@@ -397,24 +397,27 @@ fn worker(shared: Arc<Shared>, tx: Sender<JobResult>) {
 fn run_job(job: &Job) -> JobResult {
     let path = &job.key.path;
     let stamp = Stamp::of(path);
-    let rendered = render::renderer_for(job.kind)
-        .render(path, job.key.target_px)
-        .and_then(|img| job.enc.encode(img));
+    let card = |note: Option<&str>| Preview::Card(Arc::new(render::text_card(path, note)));
+    let rendered = match job.kind {
+        Some(kind) => render::renderer_for(kind)
+            .render(path, job.key.target_px)
+            .and_then(|img| job.enc.encode(img)),
+        // No renderer: show the contents if it is plain text, otherwise the card.
+        None => Ok(match render::text::load(path) {
+            Ok(Some(lines)) => Preview::Text(Arc::new(lines)),
+            Ok(None) => card(None),
+            Err(e) => card(Some(&format!("cannot read: {e}"))),
+        }),
+    };
     let (preview, unavailable) = match rendered {
         Ok(p) => (p, None),
         Err(e) => {
             if let Some(u) = e.downcast_ref::<Unavailable>() {
                 let note = format!("PDF previews unavailable: {u}");
-                (
-                    Preview::Card(Arc::new(render::text_card(path, Some(&note)))),
-                    Some(u.0.clone()),
-                )
+                (card(Some(&note)), Some(u.0.clone()))
             } else {
                 let note = format!("preview failed: {e:#}");
-                (
-                    Preview::Card(Arc::new(render::text_card(path, Some(&note)))),
-                    None,
-                )
+                (card(Some(&note)), None)
             }
         }
     };
@@ -468,9 +471,11 @@ mod tests {
         let mut c = cache(64 << 20);
         assert!(matches!(c.get(&a, true), Lookup::Pending));
         c.request(&[a.clone(), txt.clone()]);
-        // Text cards are immediate.
-        assert!(matches!(c.get(&txt, true), Lookup::Ready(Preview::Card(_))));
-        assert_eq!(wait_all(&mut c, 1), 1);
+        assert_eq!(wait_all(&mut c, 2), 2);
+        match c.get(&txt, true) {
+            Lookup::Ready(Preview::Text(lines)) => assert_eq!(**lines, ["hi"]),
+            _ => panic!("expected a text preview"),
+        }
         assert!(matches!(c.get(&a, true), Lookup::Ready(Preview::Proto(_))));
         // Re-requesting a cached file queues nothing.
         c.request(std::slice::from_ref(&a));
@@ -506,6 +511,17 @@ mod tests {
         assert_eq!(wait_all(&mut c, 6), 6);
         assert!(c.bytes() <= 1 << 20);
         assert!(c.len() >= 1 && c.len() < 6);
+    }
+
+    #[test]
+    fn binary_files_get_cards() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("weights.bin");
+        std::fs::write(&p, [0u8, 1, 2, 255]).unwrap();
+        let mut c = cache(64 << 20);
+        c.request(std::slice::from_ref(&p));
+        assert_eq!(wait_all(&mut c, 1), 1);
+        assert!(matches!(c.get(&p, false), Lookup::Ready(Preview::Card(_))));
     }
 
     #[test]

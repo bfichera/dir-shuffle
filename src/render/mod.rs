@@ -2,11 +2,13 @@
 //!
 //! The renderer is chosen by file extension. PDFs go through PDFium, which renders page 1
 //! at exactly the target size. Common raster formats use `image` plus `fast_image_resize`.
-//! Anything else gets a text card, drawn by the UI.
+//! Anything else is shown as plain text if it looks like text (`text`), and otherwise gets
+//! a text card (path, size, mtime), drawn by the UI.
 
 pub mod kitty;
 pub mod pdf;
 pub mod raster;
+pub mod text;
 
 use std::path::Path;
 use std::time::SystemTime;

@@ -1,6 +1,6 @@
 # dir-shuffle
 
-Browse the output folders of a parameter sweep in your terminal, with previews of PDFs and images.
+Browse the output folders of a parameter sweep in your terminal, with previews of PDFs, images and text files.
 
 Each folder level is a parameter. Pick one parameter to scroll through while the others stay fixed. For example, you can see `beta_hist.pdf` for every temperature, with everything else held the same.
 
@@ -22,6 +22,7 @@ dir-shuffle path/to/outputs
 |---|---|
 | `j` / `k` | next / previous file |
 | `Tab` / `Shift-Tab` | select another parameter in the header |
+| `J` / `K` | scroll down / up in a text preview |
 | `h` / `l` | change the selected parameter's value |
 | `f` | scroll through the selected parameter instead |
 | `v` | choose which parameter to scroll through |
